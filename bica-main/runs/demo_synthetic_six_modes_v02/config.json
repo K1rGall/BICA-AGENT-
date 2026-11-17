@@ -1,0 +1,42 @@
+{
+  "manifest": "data/ambibench_debug/manifest.jsonl",
+  "output": "runs/demo_synthetic_six_modes_v02",
+  "provider": "mock",
+  "model": null,
+  "base_url": "http://localhost:11434",
+  "split": "debug",
+  "modes": "direct,repeat,hypotheses,evidence,reflect,reflect_zoom",
+  "repeats": 1,
+  "seed": 42,
+  "temperature": 0.0,
+  "max_tokens": 768,
+  "max_calls": 96,
+  "dry_run": false,
+  "cases": 36,
+  "synthetic": true,
+  "python": "3.13.5",
+  "created_at": "2026-11-17T14:50:30.505323+00:00",
+  "source_hashes": {
+    "__init__.py": "dcde0b3ecde14a1037dacdc2a8ebe4e44a1d65658736b5a64d9ade953e520762",
+    "diagnostics.py": "b61b3169adfbc1766b3ed35805633480c21b5ebd690347e0623add6808a11b3b",
+    "launcher.py": "1eb164bb2e08294f798325a67e6684bef323cb7be3f564c97467f0df02c43861",
+    "evaluation.py": "0c09d2a82eecdaa6b9ac84c6753f4b9cc1dd6dca661289ed3a4b3ab32cf95955",
+    "colab.py": "7e92416de7e06f7c41ea8b33b7968583ccbfe5a7082e2466b72a00ef0c9c8889",
+    "__main__.py": "6d8b7d7846a845059d7a3107143f11131f63c5511d669b44085b15ec5e3d2279",
+    "reflection.py": "5f47e1afa7b0ec8a6837c344ffc2719c6c029f5074448ec5a364ee26e2a0144d",
+    "clients.py": "11cbd775d496265d42073dddf5613b356f1549fb47878cabd4a674f38f30d3c5",
+    "cli.py": "de75934711fa0222d81a28877b13ed17d9b0d2f258d5758504812b5de40b0b96",
+    "core.py": "524c6b36c84ab9f8cfca76684e3c564b37122647182423a5388a18a25b522e13"
+  },
+  "prompt_hashes": {
+    "system.txt": "8a96e1ee07b795bbe5a29e91a007fb8e7a23a317143ae47d88e3188e8733bc7b",
+    "adjudicate.txt": "87b36ba90f03e44240af3e709d064fb4a43832f777eb7a5479de03229f02d81e",
+    "verify.txt": "c89e88fb8eed19567df2afb6c46b69206b243644c4cc3e8e71da43c7dedda908",
+    "describe.txt": "f26699c4ba6a7a35eee0a8c65724a7f0ee22b7f9e74079fdc13019587a125538",
+    "adjudicate_zoom.txt": "6656c837687e5859342709fa674334d454b0476677d6af7c326f4a065a5da647",
+    "alternatives.txt": "341afac2cd5fed96ae292b96e6bff2038735160974aac213c28353b57d9bfcc2",
+    "retain.txt": "ed1a9efbe194654af202ce6bcbd2496b6c8191eb1c46b7497dbf6da4ad5c4363",
+    "revise.txt": "8409cf7d4b85785bf6de7866e4b336b8af0b23a557663a1fbc9c5cf70182b19f",
+    "independent.txt": "02209a45f52a188a040d39e3913347050b8058bbbca2be3fbaf046468dfd06ba"
+  }
+}

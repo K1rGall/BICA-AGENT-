@@ -1,0 +1,84 @@
+{
+  "note": "Technical diagnostics only: not visual correctness.",
+  "synthetic": true,
+  "by_mode": [
+    {
+      "mode": "direct",
+      "cases": 6,
+      "errors": 0,
+      "attempted_calls": 6,
+      "completed_calls": 6,
+      "elapsed_s": 3.0196000011528668e-05,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "reflection_disagreement": 0,
+      "flagged_cases": 0,
+      "completion_rate": 1.0
+    },
+    {
+      "mode": "evidence",
+      "cases": 6,
+      "errors": 0,
+      "attempted_calls": 18,
+      "completed_calls": 18,
+      "elapsed_s": 0.00011839000012514589,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "reflection_disagreement": 0,
+      "flagged_cases": 0,
+      "completion_rate": 1.0
+    },
+    {
+      "mode": "hypotheses",
+      "cases": 6,
+      "errors": 0,
+      "attempted_calls": 18,
+      "completed_calls": 18,
+      "elapsed_s": 9.590600006958994e-05,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "reflection_disagreement": 0,
+      "flagged_cases": 0,
+      "completion_rate": 1.0
+    },
+    {
+      "mode": "reflect",
+      "cases": 6,
+      "errors": 0,
+      "attempted_calls": 18,
+      "completed_calls": 18,
+      "elapsed_s": 9.514400005627976e-05,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "reflection_disagreement": 0,
+      "flagged_cases": 6,
+      "completion_rate": 1.0
+    },
+    {
+      "mode": "reflect_zoom",
+      "cases": 6,
+      "errors": 0,
+      "attempted_calls": 18,
+      "completed_calls": 18,
+      "elapsed_s": 0.0001266900001155591,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "reflection_disagreement": 0,
+      "flagged_cases": 6,
+      "completion_rate": 1.0
+    },
+    {
+      "mode": "repeat",
+      "cases": 6,
+      "errors": 0,
+      "attempted_calls": 18,
+      "completed_calls": 18,
+      "elapsed_s": 0.0001711610000256769,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "reflection_disagreement": 0,
+      "flagged_cases": 0,
+      "completion_rate": 1.0
+    }
+  ]
+}
