@@ -63,3 +63,57 @@ def build_closeups(image_bytes, answers, maximum=2):
         metadata.append({"region": label, "box_xyxy": [left, top, left+cw, top+ch],
                          "sha256": hashlib.sha256(raw).hexdigest()})
     return encoded, metadata
+
+
+def find_candidate_overlap(answer):
+    """Cheap, conservative warnings about near-duplicate labels.
+
+    Does NOT decide visual equivalence, merge predictions, or alter scores.
+    Matching the same head or a contextual suffix can yield false positives.
+    """
+    items = [x for x in answer.get("interpretations", [])
+             if x.get("status") in {"supported", "uncertain"}]
+    labels = [x.get("label", "").strip() for x in items]
+    flags = []
+    for i, left in enumerate(labels):
+        lt = re.findall(r"[a-zа-яё]+", left.casefold())
+        for j in range(i + 1, len(labels)):
+            right = labels[j]
+            rt = re.findall(r"[a-zа-яё]+", right.casefold())
+            reason = None
+            if lt and rt and len(lt) > 1 and len(rt) > 1 and lt[0] == rt[0]:
+                reason = "shared_subject_word"
+            elif len(lt) >= 3 and len(rt) >= 3 and lt[-2:] == rt[-2:]:
+                reason = "shared_context_tail"
+            elif (len(lt) == 1 and lt[0] in rt) or (len(rt) == 1 and rt[0] in lt):
+                reason = "nested_label"
+            if reason:
+                flags.append({"left": left, "right": right, "reason": reason})
+    return flags
+
+
+def decide_visual_challenge(readings):
+    """Choose whether to spend an extra VLM call, without gold or label truth.
+
+    A lexical difference does NOT imply a visual difference. This conservative
+    trigger only requests a closer inspection; neither policy nor overlaps
+    count toward scientific correctness metrics.
+    """
+    if len(readings) != 2:
+        raise ValueError("Adaptive policy requires two independent readings")
+    reasons = []
+    supported = []
+    for answer in readings:
+        labels = {item["label"].strip().casefold() for item in answer["interpretations"]
+                  if item["status"] == "supported"}
+        supported.append(labels)
+        if any(item["status"] == "uncertain" for item in answer["interpretations"]):
+            if "uncertain_interpretation" not in reasons:
+                reasons.append("uncertain_interpretation")
+        if find_candidate_overlap(answer) and "possible_label_overlap" not in reasons:
+            reasons.append("possible_label_overlap")
+    if supported[0] != supported[1]:
+        reasons.append("lexical_disagreement")
+    if not supported[0] or not supported[1]:
+        reasons.append("missing_supported_interpretation")
+    return {"need_challenge": bool(reasons), "reasons": reasons}

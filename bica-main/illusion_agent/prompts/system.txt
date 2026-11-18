@@ -6,3 +6,5 @@ Return only JSON, without markdown, with this structure:
 {"interpretations":[{"label":"short object or scene label","status":"supported|rejected|uncertain","evidence":[{"region":"specific location in the image","feature":"visible feature and its relation to the interpretation"}],"against":["visible counterevidence or limitation"]}],"cue_verdict":"supported|rejected|uncertain|not_applicable"}
 Use at most four interpretations. Every supported interpretation must have at least one specific evidence item.
 Do not provide hidden reasoning. Report concise, externally checkable observations and decisions.
+
+IMPORTANT: Several labels about ONE physical entity (such as a category name, a specific instance, or different attributes of the same object) are ONE interpretation, not multiple readings. A genuine second interpretation must reorganize visible shapes or figure/background into a different perceived object/scene. Surroundings and attributes do not count as alternative readings. When uncertain, report only the supported primary reading.

@@ -91,8 +91,9 @@ class ExperimentTests(unittest.TestCase):
         row = load_manifest(self.manifest)[0]
         events = []
         with self.assertRaises(ValueError):
-            run_case(Bad(), row, row["cues"][0], "evidence", 1, events.append)
-        self.assertEqual([x["event"] for x in events], ["request", "response"])
+            run_case(Bad(), row, row["cues"][0], "evidence", 1, events.append, schema_repair=False)
+        self.assertEqual([x["event"] for x in events],
+                         ["request", "response", "schema_failure", "repair_skipped"])
 
     def test_fenced_answer_and_absent_cue_in_all_modes_preserve_content(self):
         obj = {"interpretations": [

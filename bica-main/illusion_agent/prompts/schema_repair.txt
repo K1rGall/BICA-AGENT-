@@ -1,0 +1,16 @@
+Your most recent answer failed STRICT JSON validation. This is a format repair only,
+NOT permission to invent interpretations or change what you see.
+Return exactly ONE valid JSON object with keys "interpretations" and "cue_verdict".
+Each interpretation has exactly "label", "status", "evidence", and "against".
+At most FOUR interpretations total; no repeated labels (ignore case and spaces).
+Keep only VISUALLY DISTINCT object/scene hypotheses; do not count attributes,
+paraphrases, subtypes or background scenery as additional readings of the SAME figure.
+If two labels describe the same subject, keep the more precise supported candidate
+only when there is actual visual evidence. If evidence is lacking, mark uncertain
+or reject; do not make up details.
+Each supported entry must cite a specific visible region and feature.
+For each evidence item use exactly "region" and "feature" (both nonempty text);
+"against" is a list of strings. Status: supported, rejected, or uncertain.
+Never copy a suggested hypothesis as fact. Preserve cue_verdict; use
+"not_applicable" only when NO cue was provided to this analysis.
+No Markdown and no commentary outside JSON.

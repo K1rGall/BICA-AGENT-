@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 
-from .reflection import build_closeups
+from .reflection import build_closeups, find_candidate_overlap, decide_visual_challenge
 import time
 from pathlib import Path
 
@@ -16,6 +16,7 @@ MODES = {
     "evidence": ("describe", "alternatives", "verify"),
     "reflect": ("describe", "independent", "adjudicate"),
     "reflect_zoom": ("describe", "independent", "adjudicate"),
+    "reflect_adaptive": ("describe", "independent", "challenge", "adjudicate"),
 }
 
 
@@ -99,8 +100,10 @@ def load_manifest(path):
             raise ValueError("At least one cue condition is required")
         cue_ids = set()
         for cue in cues:
-            if not isinstance(cue, dict) or set(cue) != {"id", "text"}:
+            if not isinstance(cue, dict) or set(cue) not in ({"id", "text"}, {"id", "text", "kind"}):
                 raise ValueError("Cue contains unexpected fields (do not include its truth label)")
+            if cue.get("kind", "hypothesis") not in {"instruction", "hypothesis"}:
+                raise ValueError("Cue.kind must be instruction or hypothesis (never its truth)")
             if not isinstance(cue["id"], str) or not cue["id"] or cue["id"] in cue_ids:
                 raise ValueError("Cue IDs must be unique")
             if not isinstance(cue["text"], str):
@@ -110,7 +113,7 @@ def load_manifest(path):
     return rows
 
 
-def run_case(client, row, cue, mode, seed, emit):
+def run_case(client, row, cue, mode, seed, emit, *, schema_repair=True, repair_allowed=None):
     """Run one condition. Reflection uses a blind independent second reading.
 
     Calls 1 and 2 cannot see one another; call 2 cannot see the text cue. The
@@ -125,32 +128,66 @@ def run_case(client, row, cue, mode, seed, emit):
     image = base64.b64encode(image_bytes).decode("ascii")
     answer = None
     readings = []
+    repair_attempted = False  # At most ONE extra generation per case, not per stage.
+    reflective_modes = {"reflect", "reflect_zoom", "reflect_adaptive"}
+    challenge_answer = None
+    adaptive_policy = None
     for step, stage in enumerate(MODES[mode]):
+        # The adaptive policy can only inspect fallible model outputs, not gold labels.
+        # Skipping a challenge saves one VLM call while retaining final visual arbitration.
+        if mode == "reflect_adaptive" and stage == "challenge":
+            adaptive_policy = decide_visual_challenge(readings)
+            emit({"event": "adaptive_decision", "mode": mode,
+                  "need_challenge": adaptive_policy["need_challenge"],
+                  "reasons": adaptive_policy["reasons"],
+                  "note": "Deterministic heuristic; not a correctness estimate"})
+            if not adaptive_policy["need_challenge"]:
+                continue
         content = (PROMPTS / (stage + ".txt")).read_text(encoding="utf-8")
         extra_images, image_metadata = [], []
-        if mode in {"reflect", "reflect_zoom"} and step:
-            # Independent pass has no access to first answer OR provided cue.
+        if mode in reflective_modes and step:
+            # New independent message context at each stage. Stage 1 sees neither
+            # the first reading nor the external suggestion; stages 2/3 do.
             messages = [{"role": "system", "content": system}]
-            if step == 2:
+            if stage in {"challenge", "adjudicate"}:
                 content += "\n\nTwo fallible prior readings (not ground truth):\n"
                 for number, reading in enumerate(readings, 1):
                     content += f"\nReading {number}: " + json.dumps(reading, ensure_ascii=False)
-                if cue["text"]:
-                    content += "\nUntrusted suggestion to check: " + json.dumps(cue["text"], ensure_ascii=False)
-                if mode == "reflect_zoom":
-                    extra_images, image_metadata = build_closeups(image_bytes, readings)
-                    content += "\n" + (PROMPTS / "adjudicate_zoom.txt").read_text(encoding="utf-8")
+                if stage == "challenge":
+                    # Challenge uses one localized image, selected without gold labels.
+                    extra_images, image_metadata = build_closeups(image_bytes, readings, maximum=1)
+                    content += "\nCheck original before the close-up; crops may remove global evidence."
                     for number, meta in enumerate(image_metadata, 1):
                         content += (f"\nClose-up {number}: region {meta['region']!r}, "
                                     f"box [left, top, right, bottom]={meta['box_xyxy']}")
+                if stage == "adjudicate":
+                    if challenge_answer is not None:
+                        content += ("\n\nAdditional fallible visual challenge (NOT truth): " +
+                                    json.dumps(challenge_answer, ensure_ascii=False))
+                    if cue["text"]:
+                        if cue.get("kind", "hypothesis") == "instruction":
+                            content += ("\nViewing instruction (not a factual suggestion): " +
+                                        json.dumps(cue["text"], ensure_ascii=False))
+                        else:
+                            content += ("\nUntrusted suggestion to check: " +
+                                        json.dumps(cue["text"], ensure_ascii=False))
+                    if mode == "reflect_zoom":
+                        extra_images, image_metadata = build_closeups(image_bytes, readings)
+                        content += "\n" + (PROMPTS / "adjudicate_zoom.txt").read_text(encoding="utf-8")
+                        for number, meta in enumerate(image_metadata, 1):
+                            content += (f"\nClose-up {number}: region {meta['region']!r}, "
+                                        f"box [left, top, right, bottom]={meta['box_xyxy']}")
         elif step == 0 and cue["text"]:
-            content += "\nSuggested interpretation to check (may be wrong): " + cue["text"]
+            if cue.get("kind", "hypothesis") == "instruction":
+                content += "\nViewing instruction (not a factual suggestion): " + cue["text"]
+            else:
+                content += "\nSuggested interpretation to check (may be wrong): " + cue["text"]
         message = {"role": "user", "content": content}
-        if step == 0 or mode in {"reflect", "reflect_zoom"}:
+        if step == 0 or mode in reflective_modes:
             message["images"] = [image] + extra_images
         messages.append(message)
         logged = [{k: v for k, v in m.items() if k != "images"} for m in messages]
-        step_seed = seed + 1009 if mode in {"reflect", "reflect_zoom"} and step == 1 else seed
+        step_seed = seed + 1009 if mode in reflective_modes and stage == "independent" else seed
         emit({"event": "request", "mode": mode, "stage": stage, "step": step, "seed": step_seed,
               "image_sha256": row["sha256"], "closeups": image_metadata,
               "images_sha256": [row["sha256"]] + [m["sha256"] for m in image_metadata]
@@ -164,11 +201,73 @@ def run_case(client, row, cue, mode, seed, emit):
             raise
         emit({"event": "response", "mode": mode, "step": step, "raw": raw, "usage": usage,
               "elapsed_s": time.monotonic() - start})
-        answer = parse_response(raw)
+        try:
+            answer = parse_response(raw)
+        except (ValueError, json.JSONDecodeError) as exc:
+            # Do not silently alter the candidate list. Ask the VLM once to
+            # repair its own output, preserving the raw invalid answer in trace.
+            error_text = f"{type(exc).__name__}: {exc}"
+            emit({"event": "schema_failure", "mode": mode, "stage": stage,
+                  "step": step, "reason": error_text})
+            permitted = (schema_repair and not repair_attempted and
+                         (repair_allowed is None or repair_allowed(step)))
+            if not permitted:
+                emit({"event": "repair_skipped", "mode": mode, "stage": stage,
+                      "step": step, "reason": "disabled_or_budget"})
+                if mode == "reflect_adaptive" and stage == "challenge":
+                    # This stage is OPTIONAL. A malformed challenge cannot turn an
+                    # otherwise answerable case into a failed experiment.
+                    emit({"event": "optional_challenge_discarded", "mode": mode,
+                          "step": step, "reason": error_text})
+                    continue
+                raise
+            repair_attempted = True
+            repair_prompt = (PROMPTS / "schema_repair.txt").read_text(encoding="utf-8")
+            repair_prompt += ("\n\nValidation failure: " + error_text +
+                              "\nThe prior invalid response is included immediately before "
+                              "this instruction. Return ONE complete corrected JSON object.")
+            repair_messages = messages + [
+                {"role": "assistant", "content": raw},
+                {"role": "user", "content": repair_prompt},
+            ]
+            # A repair of the INDEPENDENT second pass sees only that pass's
+            # context and its invalid output; never another reading or cue.
+            repair_log = [{k: v for k, v in m.items() if k != "images"}
+                          for m in repair_messages]
+            repair_seed = step_seed + 42437
+            emit({"event": "request", "mode": mode, "stage": "schema_repair",
+                  "step": step, "seed": repair_seed,
+                  "image_sha256": row["sha256"],
+                  "repair_of": stage, "messages": repair_log})
+            repair_start = time.monotonic()
+            try:
+                replacement_raw, repair_usage = client.complete(repair_messages, repair_seed)
+            except Exception as transport_exc:
+                emit({"event": "transport_error", "mode": mode, "stage": "schema_repair",
+                      "step": step, "error": type(transport_exc).__name__,
+                      "elapsed_s": time.monotonic() - repair_start})
+                raise
+            emit({"event": "response", "mode": mode, "stage": "schema_repair",
+                  "step": step, "raw": replacement_raw, "usage": repair_usage,
+                  "elapsed_s": time.monotonic() - repair_start})
+            try:
+                answer = parse_response(replacement_raw)
+            except (ValueError, json.JSONDecodeError) as repair_exc:
+                emit({"event": "repair_failure", "mode": mode, "stage": stage,
+                      "step": step, "reason": str(repair_exc)})
+                if mode == "reflect_adaptive" and stage == "challenge":
+                    emit({"event": "optional_challenge_discarded", "mode": mode,
+                          "step": step, "reason": str(repair_exc)})
+                    continue
+                raise
+            emit({"event": "repair_success", "mode": mode, "stage": stage,
+                  "step": step})
+            raw = replacement_raw  # Subsequent stages see ONLY a valid response.
         if _json_payload(raw) != raw.strip():
             emit({"event": "normalization", "step": step, "kind": "outer_json_fence"})
         # The blind independent pass has no cue even when the overall case has one.
-        cue_present = bool(cue["text"]) and not (mode in {"reflect", "reflect_zoom"} and step == 1)
+        cue_present = (bool(cue["text"]) and cue.get("kind", "hypothesis") == "hypothesis"
+                       and not (mode in reflective_modes and stage in {"independent", "challenge"}))
         if not cue_present and answer["cue_verdict"] != "not_applicable":
             emit({"event": "normalization", "step": step, "kind": "absent_cue",
                   "field": "cue_verdict", "original": answer["cue_verdict"],
@@ -176,19 +275,30 @@ def run_case(client, row, cue, mode, seed, emit):
             answer["cue_verdict"] = "not_applicable"
         if cue_present and answer["cue_verdict"] == "not_applicable":
             raise ValueError("cue_verdict inconsistent with presence/absence of cue")
-        if mode in {"reflect", "reflect_zoom"}:
-            if step < 2:
+        if mode in reflective_modes:
+            if stage in {"describe", "independent"}:
                 readings.append(answer)
+            elif stage == "challenge":
+                challenge_answer = answer
         else:
             messages.append({"role": "assistant", "content": raw})
-    if mode in {"reflect", "reflect_zoom"}:
+    overlap = find_candidate_overlap(answer)
+    if overlap:
+        emit({"event": "candidate_overlap_warning", "mode": mode,
+              "flags": overlap,
+              "note": "Lexical warning only; human/image-grounded assessment required."})
+    if mode in reflective_modes:
         def labels(value):
             return {h["label"].strip().casefold() for h in value["interpretations"]
                     if h["status"] == "supported"}
         first, second = labels(readings[0]), labels(readings[1])
         last = labels(answer)
-        emit({"event": "reflection_flags", "label_disagreement": first != second,
+        emit({"event": "reflection_flags", "mode": mode, "label_disagreement": first != second,
               "first_supported_labels": len(first), "second_supported_labels": len(second),
               "final_supported_labels": len(last), "new_final_labels": len(last - first - second),
               "note": "Lexical diagnostics only; not correctness or semantic equivalence"})
+        if mode == "reflect_adaptive":
+            emit({"event": "adaptive_summary", "mode": mode,
+                  "extra_visual_challenge": challenge_answer is not None,
+                  "reasons": adaptive_policy["reasons"] if adaptive_policy else []})
     return answer

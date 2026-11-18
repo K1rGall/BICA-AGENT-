@@ -12,7 +12,11 @@ def analyze_run(run):
         raise ValueError("Duplicate case_id in results")
     by_mode = defaultdict(lambda: {"cases": 0, "errors": 0, "attempted_calls": 0, "completed_calls": 0,
                                    "elapsed_s": 0.0, "input_tokens": 0, "output_tokens": 0,
-                                   "reflection_disagreement": 0, "flagged_cases": 0})
+                                   "reflection_disagreement": 0, "flagged_cases": 0,
+                                   "schema_failures": 0, "repair_successes": 0,
+                                   "repair_failures": 0, "overlap_warnings": 0,
+                                   "adaptive_challenges": 0, "adaptive_skips": 0,
+                                   "adaptive_trigger_reasons": {}})
     for row in results:
         b = by_mode[row["mode"]]
         b["cases"] += 1
@@ -38,6 +42,20 @@ def analyze_run(run):
                 usage = event.get("usage") or {}
                 b["input_tokens"] += int(usage.get("input_tokens") or usage.get("prompt_eval_count") or 0)
                 b["output_tokens"] += int(usage.get("output_tokens") or usage.get("eval_count") or 0)
+            elif event.get("event") == "schema_failure":
+                b["schema_failures"] += 1
+            elif event.get("event") == "repair_success":
+                b["repair_successes"] += 1
+            elif event.get("event") == "repair_failure":
+                b["repair_failures"] += 1
+            elif event.get("event") == "adaptive_decision":
+                key = "adaptive_challenges" if event.get("need_challenge") else "adaptive_skips"
+                b[key] += 1
+                for reason in event.get("reasons", []):
+                    counts = b["adaptive_trigger_reasons"]
+                    counts[reason] = counts.get(reason, 0) + 1
+            elif event.get("event") == "candidate_overlap_warning":
+                b["overlap_warnings"] += 1
             elif event.get("event") == "reflection_flags":
                 b["flagged_cases"] += 1
                 b["reflection_disagreement"] += int(event["label_disagreement"])

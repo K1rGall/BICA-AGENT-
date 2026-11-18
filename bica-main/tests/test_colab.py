@@ -72,3 +72,20 @@ class ColabTests(unittest.TestCase):
         second = run_pilot(Client(), self.manifest, self.out, modes=("direct",), max_calls=1)
         self.assertEqual(first["errors"], 1)
         self.assertEqual(first, second)
+
+class ResearchSplitTests(unittest.TestCase):
+    def test_colab_uses_only_selected_split_for_adjudicated_study(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            (root/'a.png').write_bytes(b'one')
+            (root/'b.png').write_bytes(b'two')
+            data=[{'id':k,'original_id':k,'image':name,'sha256':sha256(Path(root/name).read_bytes()),
+                   'split':split,'cues':[{'id':'A','text':''}]}
+                  for k,name,split in [('a','a.png','dev'),('b','b.png','test')]]
+            m=root/'manifest.jsonl'
+            m.write_text(''.join(json.dumps(x)+'\n' for x in data))
+            result=run_pilot(Client(),m,root/'out',modes=('direct',),max_calls=1,split='test')
+            self.assertEqual(result['planned_cases'],1)
+            saved=json.loads((root/'out'/'results.jsonl').read_text())
+            self.assertEqual(saved['image_id'],'b')
+            self.assertEqual(json.loads((root/'out'/'config.json').read_text())['split'],'test')

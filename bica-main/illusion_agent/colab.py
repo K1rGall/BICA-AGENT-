@@ -73,7 +73,7 @@ def _atomic_json(path, value):
 
 
 def run_pilot(client, manifest, output, modes=("direct", "repeat", "hypotheses", "evidence"),
-              max_calls=60, seed=42, limit=None):
+              max_calls=60, seed=42, limit=None, schema_repair=True, split="debug"):
     """Resume completed cases exactly; partial cases restart and consume extra calls.
 
     max_calls limits attempted model calls across all sessions, including interrupted attempts.
@@ -83,14 +83,16 @@ def run_pilot(client, manifest, output, modes=("direct", "repeat", "hypotheses",
         raise ValueError("Invalid modes")
     if max_calls < 1 or (limit is not None and limit < 1):
         raise ValueError("Limits must be positive")
-    rows = load_manifest(manifest)
-    if any(r["split"] != "debug" for r in rows):
-        raise ValueError("This pilot runner accepts debug data only")
+    if split not in {"debug", "dev", "test"}:
+        raise ValueError("Unknown split: " + str(split))
+    rows = [r for r in load_manifest(manifest) if r["split"] == split]
+    if not rows:
+        raise ValueError("No images for requested split: " + split)
     rows = rows[:limit] if limit is not None else rows
     cases = [(row, cue, mode) for row in rows for cue in row["cues"] for mode in modes]
     random.Random(seed).shuffle(cases)
-    config = {"schema_version": 1, "synthetic": client.synthetic,
-              "client": client.metadata, "modes": list(modes), "seed": seed, "limit": limit,
+    config = {"schema_version": 3, "synthetic": client.synthetic, "schema_repair": bool(schema_repair),
+              "client": client.metadata, "modes": list(modes), "seed": seed, "limit": limit, "split": split,
               "manifest_sha256": sha256(Path(manifest).read_bytes()),
               "prompt_hashes": {p.name: sha256(p.read_bytes()) for p in PROMPTS.glob("*.txt")},
               "code_hashes": {p.name: sha256(p.read_bytes()) for p in Path(__file__).parent.glob("*.py")}}
@@ -142,7 +144,14 @@ def run_pilot(client, manifest, output, modes=("direct", "repeat", "hypotheses",
                       "image_sha256": row["sha256"], "cue_id": cue["id"], "mode": mode,
                       "repeat": 0, "synthetic": client.synthetic}
             try:
-                result["answer"] = run_case(client, row, cue, mode, seed, emit)
+                def repair_allowed(step):
+                    # Reserve capacity for all remaining required stages. A repair
+                    # is an EXTRA call and must never exceed the hard budget.
+                    remaining_base = len(MODES[mode]) - step - 1
+                    return used + 1 + remaining_base <= max_calls
+                result["answer"] = run_case(
+                    client, row, cue, mode, seed, emit,
+                    schema_repair=schema_repair, repair_allowed=repair_allowed)
                 result["status"] = "ok"
             except Exception as exc:
                 result.update(status="error", error=type(exc).__name__, detail=str(exc)[:500])

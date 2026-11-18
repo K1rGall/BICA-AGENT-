@@ -30,13 +30,14 @@ def run(args):
         raise ValueError("Counts must be positive")
     cases = [(row, cue, mode, repeat) for row in selected for cue in row["cues"]
              for mode in modes for repeat in range(args.repeats)]
-    calls = sum(len(MODES[c[2]]) for c in cases)
+    base_calls = sum(len(MODES[c[2]]) for c in cases)
+    calls = base_calls + len(cases)  # Reserve up to one schema repair per case.
     if calls > args.max_calls:
-        raise ValueError(f"Plan requires {calls} calls, exceeding limit {args.max_calls}")
+        raise ValueError(f"Plan requires up to {calls} calls, exceeding limit {args.max_calls}")
     if args.provider == "ollama" and not args.model:
         raise ValueError("Specify --model with an installed vision-capable Ollama model")
     random.Random(args.seed).shuffle(cases)
-    plan = {"cases": len(cases), "max_calls": calls, "provider": args.provider,
+    plan = {"cases": len(cases), "base_calls": base_calls, "max_calls": calls, "provider": args.provider,
             "synthetic": args.provider == "mock", "split": args.split}
     if args.dry_run:
         print(json.dumps(plan, ensure_ascii=False, indent=2))
